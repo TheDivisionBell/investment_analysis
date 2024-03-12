@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
+## Analysis for S&P500
 ## tetst
 path = r'C:\Users\Matteo\Downloads\SP500.csv'
 def ReturnLumpSum(df, years, investment):
