@@ -1,5 +1,7 @@
 import streamlit as st
+import datetime
 import pandas as pd
+import yfinance as yf
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -7,88 +9,151 @@ import plotly.graph_objects as go
 ## Analysis for S&P500
 ## tetst
 path = r'C:\Users\Matteo\Downloads\SP500.csv'
+
+today = datetime.datetime.now()
+s_date = datetime.date(1960,1,1)
+e_date = datetime.date(today.year,1,1)
 def ReturnLumpSum(df, years, investment):
-#     for years in years:
-    sell_price_dict = {}
-    n_shares_dict = {}
-    for item in df.Date:
-        date_sell = item + pd.DateOffset(years = years)
-        if date_sell <= df.Date.max():
-            n_shares = investment//df.loc[df['Date']==item, 'PriceNormalize'].values[0]
-            sell_price = df.loc[df['Date']==date_sell, 'PriceNormalize'].values[0]
+    date_array = df['Date'].values
+    len_date_array = len(date_array)
+    max_iteration = len_date_array - years * 365
+    sell_price_dict = np.zeros(len_date_array)
+    max_date = df.Date.max()
+    price_dict = {date: price for date, price in zip(date_array, df['PriceNormalize'])}
+    for i, item in enumerate(date_array):
+        if i < max_iteration:
+            target_date = np.datetime64(item) + np.timedelta64(years*365, 'D')
+            if target_date<max_date:
+                while target_date not in price_dict:
+                    target_date += np.timedelta64(1, 'D')
+                sell_price = price_dict[target_date]
+            else:
+                sell_price = None
+            sell_price_dict[i] = sell_price
         else:
-            sell_price = None
-        n_shares_dict[item] = n_shares
-        sell_price_dict[item] = sell_price
-    df['SellPriceLS'] = df.Date.map(sell_price_dict)
-    df['NumSharesLS'] = df.Date.map(n_shares_dict)
+            break
+    df['SellPriceLS'] = sell_price_dict
+    df['NumSharesLS'] = investment//df.PriceNormalize
     df['ReturnLS'] = df['SellPriceLS']*df['NumSharesLS']
     df['VariationLS'] = df['SellPriceLS']/df['PriceNormalize'] - 1
     return df
 
+# def ReturnPAC(df, years, tot_inv, quotes):
+#     price_list = df.PriceNormalize.to_list()
+#     n_month = tot_inv//quotes
+#     inv_pac = np.full(n_month,quotes)
+#     tot_shares = np.empty((0,0))
+#     tot_value = np.empty((0,0))
+#     for item in df.index:
+#         start = item
+#         end = start+n_month
+#         inv_end = years*12 + start
+#         if inv_end <=len(df.index)-1:
+#             price_end = df.loc[df.index==inv_end, 'PriceNormalize']
+#             prices = price_list[start:end]
+#             shares = inv_pac//prices
+#             shares_tot = shares.sum()
+#             tot_shares = np.append(tot_shares, shares_tot)
+#             value_end = shares_tot*price_end
+#     #         if isinstance(value_end, float):
+#             tot_value = np.append(tot_value, value_end)
+#     #         else:
+#     #             tot_value = np.append(tot_value, 0)
+#         else:
+#             tot_shares = np.append(tot_shares, 0)
+#             tot_value = np.append(tot_value, 0)
+#     df['NumSharesPAC'] = tot_shares
+#     df['ReturnPAC'] = tot_value
+#     return df
 
 def ReturnPAC(df, years, tot_inv, quotes):
-    price_list = df.PriceNormalize.to_list()
-    n_month = tot_inv//quotes
-    inv_pac = np.full(n_month,quotes)
-    tot_shares = np.empty((0,0))
-    tot_value = np.empty((0,0))
-    for item in df.index:
-        start = item
-        end = start+n_month
-        inv_end = years*12 + start
-        if inv_end <=len(df.index)-1:
-            price_end = df.loc[df.index==inv_end, 'PriceNormalize']
-            prices = price_list[start:end]
-            shares = inv_pac//prices
-            shares_tot = shares.sum()
-            tot_shares = np.append(tot_shares, shares_tot)
-            value_end = shares_tot*price_end
-    #         if isinstance(value_end, float):
-            tot_value = np.append(tot_value, value_end)
-    #         else:
-    #             tot_value = np.append(tot_value, 0)
+    date_array = df['Date'].values
+    len_date_array = len(date_array)
+    max_iteration = len_date_array - years * 365
+    price_dict = {date: price for date, price in zip(date_array, df['PriceNormalize'])}
+    tot_return = np.zeros(len_date_array)
+    shares_owned = np.zeros(len_date_array)
+    for i, item in enumerate(date_array):
+        tot_shares = 0
+        cap_invested = 0
+        target_date = np.datetime64(item)
+        date_sell = target_date + np.timedelta64(365 * years, 'D')
+
+        while date_sell not in price_dict:
+            date_sell += np.timedelta64(1, 'D')
+
+        if i < max_iteration:
+
+            while cap_invested < tot_inv:
+
+                while target_date not in price_dict:
+                    target_date += np.timedelta64(1, 'D')
+                shares = quotes // price_dict[target_date]
+
+                tot_shares += shares
+
+                target_date += np.timedelta64(30, 'D')
+
+                cap_invested +=quotes
+
+            tot_return[i] = tot_shares * price_dict[date_sell]
+            shares_owned[i] = tot_shares
+
         else:
-            tot_shares = np.append(tot_shares, 0)
-            tot_value = np.append(tot_value, 0)
-    df['NumSharesPAC'] = tot_shares
-    df['ReturnPAC'] = tot_value
+            break
+
+    df['ReturnPAC'] = tot_return
+    df['NumSharesPAC'] = shares_owned
     return df
 
 
 def ReturnSmartPAC(df, years, tot_inv, quotes):
-    price_list = df.PriceNormalize.to_list()
-    tot_return = np.empty((0, 0))
-    shares_owned = np.empty((0, 0))
-    for item in df.index:
-        end = item + 12 * years
-        cap_invested = 0
-        n_shares = np.empty((0, 0))
-        i = item
-        period = 1
+    date_array = df['Date'].values
+    len_date_array = len(date_array)
+    max_iteration = len_date_array - years * 365
+    price_dict = {date: price for date, price in zip(date_array, df['PriceNormalize'])}
+    tot_return = np.zeros(len_date_array)
+    shares_owned = np.zeros(len_date_array)
+    for i, item in enumerate(date_array):
         tot_shares = 0
-        while cap_invested < tot_inv:
-            inv_obj = period * quotes
-            cap_val = tot_shares * price_list[i]
-            delta_incr_val = inv_obj - cap_val
-            if delta_incr_val <= 0:
-                shares = 0
-            else:
-                shares = delta_incr_val // price_list[i]
-                cap_invested = cap_invested + delta_incr_val
-            tot_shares = shares + tot_shares
+        cap_invested = 0
+        period = 0
+        target_date = np.datetime64(item)
+        date_sell = target_date + np.timedelta64(365 * years, 'D')
 
-            if i < len(df.index) - 1:
-                i += 1
+        while date_sell not in price_dict:
+            date_sell += np.timedelta64(1, 'D')
+
+        if i < max_iteration:
+            cap_val = 0
+
+            while cap_invested < tot_inv and cap_val < tot_inv:
+
+                while target_date not in price_dict:
+                    target_date += np.timedelta64(1, 'D')
+
+                inv_obj = (period + 1) * quotes
+                cap_val = tot_shares * price_dict[target_date]
+                delta_incr_val = inv_obj - cap_val
+
+                if delta_incr_val <= 0:
+                    shares = 0
+                elif delta_incr_val > 0:
+                    shares = delta_incr_val // price_dict[target_date]
+                    cap_invested += delta_incr_val
+                else:
+                    shares = 0
+
+                tot_shares += shares
                 period += 1
-            else:
-                break
-        if end <= len(df.index) - 1:
-            price_end = df.loc[df.index == end, 'PriceNormalize']
+
+                target_date += np.timedelta64(30, 'D')
+
+            tot_return[i] = tot_shares * price_dict[date_sell]
+            shares_owned[i] = tot_shares
+
         else:
-            price_end = 0
-        tot_return = np.append(tot_return, tot_shares * price_end)
-        shares_owned = np.append(shares_owned, tot_shares)
+            break
 
     df['ReturnSmartPAC'] = tot_return
     df['NumSharesSmartPAC'] = shares_owned
@@ -97,32 +162,46 @@ def ReturnSmartPAC(df, years, tot_inv, quotes):
 if __name__ == '__main__':
     st.set_page_config(layout='wide')
     st.title('Investment Strategies Comparison')
-    st.subheader('', divider=True )
-    df = pd.read_csv(path)
-    df.drop(['Open', 'High', 'Low', 'Volume', 'Adj Close'], axis=1, inplace=True)
-    df['Date'] = pd.to_datetime(df.Date)
-    df['PriceNormalize'] = df.Close / 100
-    df_pac = df.copy()
+    st.subheader('', divider=True)
+    # df = pd.read_csv(path)
+    # df.drop(['Open', 'High', 'Low', 'Volume', 'Adj Close'], axis=1, inplace=True)
+    # df['Date'] = pd.to_datetime(df.Date)
+    # df['PriceNormalize'] = df.Close / 100
+    # df_pac = df.copy()
 
     filters = st.form(key='filters')
     with filters:
-        cola, space1, colb, space2, colc = st.columns([1,.5,1,.5,1])
+        colt, space0,cola, space1, colb, space2, colc = st.columns([1, .5, 1,.5,1,.5,1])
+        with colt:
+            ticker = st.text_input('Please insert a ticker')
         with cola:
-            years = np.arange(1,21)
+            years = np.arange(1, 21)
             years_filter = st.selectbox('Investment horizon', years)
         with colb:
-            amount = np.arange(0,105000,5000)
+            amount = np.arange(0, 105000, 5000)
             amount_filter = st.select_slider('Amount to be invested', amount)
         with colc:
-            pac_quotes = np.arange(0,5100,100)
+            pac_quotes = np.arange(0, 5100, 100)
             pac_filter = st.select_slider('Monthly quotes for accumulation plan', pac_quotes)
         button = filters.form_submit_button('Enter')
 
     if button:
+        df = yf.download(ticker, s_date, e_date)
+        df.reset_index(inplace=True)
+        st.dataframe(df.head(10))
+        df.drop(['Open', 'High', 'Low', 'Volume', 'Adj Close'], axis=1, inplace=True)
+        df['Date'] = pd.to_datetime(df.Date)
+        df['PriceNormalize'] = df.Close / 100
+        df_pac = df.copy()
         df_pac = ReturnLumpSum(df_pac, years_filter, amount_filter)
         df_pac = ReturnPAC(df_pac, years_filter, amount_filter, pac_filter)
         df_pac = ReturnSmartPAC(df_pac, years_filter, amount_filter, pac_filter)
-        df_pac_filtered = df_pac.dropna(subset=['SellPriceLS'])
+        # df_merge = pd.merge(df_lsum, df_pac, on='Date', how='inner')
+        # df_merge = pd.merge(df_merge, df_spac, on='Date', how='inner')
+        df_pac_filtered_0 = df_pac.dropna(subset=['ReturnLS'])
+        df_pac_filtered = df_pac_filtered_0[df_pac_filtered_0['ReturnLS'] != 0]
+        # st.dataframe(df_pac_filtered)
+
         # Return
         return_mean_ls = df_pac_filtered.ReturnLS.mean()
         return_stdev_ls = df_pac_filtered.ReturnLS.std(skipna=True)
@@ -163,6 +242,7 @@ if __name__ == '__main__':
                       title=f'Return after {years_filter}Y investment')
 
         # Histogram
+        # filtered = df_pac_filtered[df_pac_filtered['ReturnLS'] != 0]
         return_pac = df_pac_filtered.ReturnPAC.to_list()
         return_lsum = df_pac_filtered.ReturnLS.to_list()
         return_spac = df_pac_filtered.ReturnSmartPAC.to_list()
