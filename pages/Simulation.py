@@ -5,10 +5,13 @@ import yfinance as yf
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import contextlib
+from functools import partialmethod
 
+import requests
 ## Analysis for S&P500
 ## tetst
-path = r'C:\Users\Matteo\Downloads\SP500.csv'
+# path = r'C:\Users\Matteo\Downloads\SP500.csv'
 
 today = datetime.datetime.now()
 s_date = datetime.date(1960,1,1)
@@ -174,6 +177,7 @@ if __name__ == '__main__':
         colt, space0,cola, space1, colb, space2, colc = st.columns([1, .5, 1,.5,1,.5,1])
         with colt:
             ticker = st.text_input('Please insert a ticker')
+            print(ticker)
         with cola:
             years = np.arange(1, 21)
             years_filter = st.selectbox('Investment horizon', years)
@@ -186,7 +190,18 @@ if __name__ == '__main__':
         button = filters.form_submit_button('Enter')
 
     if button:
-        df = yf.download(ticker, s_date, e_date)
+        @contextlib.contextmanager
+        def ssl_verification_disabled():
+            old_request = requests.Session.request
+            requests.Session.request = partialmethod(old_request, verify=False)
+            yield
+            requests.Session.request = old_request
+
+
+        with ssl_verification_disabled():
+            df = yf.download(ticker, s_date, e_date)
+
+        # df = yf.download(ticker, s_date, e_date)
         df.reset_index(inplace=True)
         st.dataframe(df.head(10))
         df.drop(['Open', 'High', 'Low', 'Volume', 'Adj Close'], axis=1, inplace=True)
